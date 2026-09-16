@@ -83,7 +83,7 @@ int alignment_for_md(const memory_desc_wrapper &mdw, dim_t ld_bytes) {
 }
 
 // micro_sdpa/micro_sdpa_bwd cross-thread argument bytes, plus headroom.
-constexpr int host_argument_bytes_fwd = 328;
+constexpr int host_argument_bytes_fwd = 332;
 constexpr int host_argument_bytes_bwd = 256;
 
 compute::gpu_arch_t gpu_arch(const micro::HWInformation &hw_info) {
@@ -1692,6 +1692,25 @@ status_t micro_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
             = CTX_IN_STORAGE(DNNL_ARG_VALUES | DNNL_ARG_ATTR_SCALES);
     const auto &value_zp
             = CTX_IN_STORAGE(DNNL_ARG_VALUES | DNNL_ARG_ATTR_ZERO_POINTS);
+    const auto &probs_quant_scales
+            = CTX_IN_STORAGE(DNNL_ARG_ATTR_SCALES | DNNL_ARG_PROBABILITIES);
+    const auto &probs_dequant_scales
+            = CTX_IN_STORAGE(DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST);
+    float probs_ratio = 1.f;
+    if (pd()->with_probs_quant_scales()) {
+        float probs_quant_scale, probs_dequant_scale;
+        auto quant_scale_storage = utils::downcast<
+                const dnnl::impl::host_scalar_memory_storage_t *>(
+                &probs_quant_scales);
+        CHECK(quant_scale_storage->get_scalar_value(
+                &probs_quant_scale, sizeof(probs_quant_scale)));
+        auto dequant_scale_storage = utils::downcast<
+                const dnnl::impl::host_scalar_memory_storage_t *>(
+                &probs_dequant_scales);
+        CHECK(dequant_scale_storage->get_scalar_value(
+                &probs_dequant_scale, sizeof(probs_dequant_scale)));
+        probs_ratio = probs_dequant_scale / probs_quant_scale;
+    }
 
     const int kv_group_size = pd()->conf.kv_group_size;
     const dim_t Q = pd()->desc()->queries();
@@ -1761,6 +1780,7 @@ status_t micro_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     arg_list.append(key_zp);
     arg_list.append(value_scales);
     arg_list.append(value_zp);
+    arg_list.append(probs_ratio);
     arg_list.append(mask_type);
     if (pd()->with_attn_mask()) arg_list.append(attn_mask);
 

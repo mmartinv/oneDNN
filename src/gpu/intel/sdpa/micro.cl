@@ -74,7 +74,7 @@ typedef qry_tile_data_t fma_tile_data_t;
 
 #if VS_S_QUANT
 #ifndef VS_S_FP8_SCALE
-#define VS_S_FP8_SCALE 448.0f
+#define VS_S_FP8_SCALE 256.0f
 #endif
 #endif
 
@@ -497,7 +497,8 @@ micro_sdpa(const global KEY_DATA_T *K, const global QRY_DATA_T *Q,
         const global KEY_ATTR_SCALES_DATA_T *K_scales,
         const global KEY_ATTR_ZP_DATA_T *K_zp,
         const global VAL_ATTR_SCALES_DATA_T *V_scales,
-        const global VAL_ATTR_ZP_DATA_T *V_zp, const int attn_mask_type
+        const global VAL_ATTR_ZP_DATA_T *V_zp, float probs_ratio,
+        const int attn_mask_type
 #if WITH_ATTN_MASK
         ,
         const global msk_tile_data_t *msk
@@ -1233,6 +1234,11 @@ micro_sdpa(const global KEY_DATA_T *K, const global QRY_DATA_T *Q,
         tile_elementwise(A_scale_tile, undo_s_fp8_scale);
 #undef undo_s_fp8_scale
 #endif
+        if (probs_ratio != 1.f) {
+#define apply_probs_ratio(x) ((x) * probs_ratio)
+            tile_elementwise(A_scale_tile, apply_probs_ratio);
+#undef apply_probs_ratio
+        }
         tile_hbroadcast_mul(&A_tile, A_scale_tile);
     }
 
