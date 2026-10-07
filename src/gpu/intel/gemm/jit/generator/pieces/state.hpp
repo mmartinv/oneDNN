@@ -188,6 +188,21 @@ struct CommonState {
 };
 
 // GEMM kernel generator state.
+// Group-0 slice of the A/B scale/offset layouts, used to load quantization
+//  parameters one k-group at a time in the k remainder (see kLoopSetup).
+// All groups slice identically, apart from their destination register offset and k offset.
+//  The layouts and addresses are advanced in place by one group between loads: block register offsets
+//  by {scale,offset}Shift, and addresses (aliasing the main addresses) by incAddrK.
+struct QuantRemLayouts {
+    bool enabled = false;
+    int nGroups = 0;
+    RegisterLayout scaleLayout, offsetLayout;
+    std::vector<ngen::GRFRange> scaleAddrs, offsetAddrs;
+    int scaleShift = 0, offsetShift = 0;   // register byte offset between consecutive groups
+    // Group that the layouts are currently positioned at; they are mutated in place between loads.
+    int scaleCurG = 0, offsetCurG = 0;
+};
+
 struct GEMMState : public CommonState {
     struct Inputs {
         ngen::Subregister A, B, C[2], base, tempC;          // q
@@ -377,6 +392,8 @@ struct GEMMState : public CommonState {
     RegisterLayout Ap_layoutAlt, Bp_layoutAlt;
     RegisterLayout A_offsetLayout, B_offsetLayout;
     RegisterLayout A_scaleLayout, B_scaleLayout, C_scaleLayout;
+    QuantRemLayouts Aq_layoutsRem, Bq_layoutsRem;
+    QuantRemLayouts Aq_layoutsRemLate, Bq_layoutsRemLate;
     RegisterLayout Ag_layout, Bg_layout;
     RegisterLayout Ar_offsetLayout, Br_offsetLayout;
     RegisterLayout Ar_scaleLayout, Br_scaleLayout;
