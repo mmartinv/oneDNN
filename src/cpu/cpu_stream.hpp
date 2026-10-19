@@ -28,13 +28,14 @@
 #include "common/c_types_map.hpp"
 #include "common/dnnl_thread.hpp"
 #include "common/stream.hpp"
+#include "cpu/cpu_stream_impl.hpp"
 
 namespace dnnl {
 namespace impl {
 namespace cpu {
 
 struct cpu_stream_t : public stream_t {
-    cpu_stream_t(engine_t *engine, impl::stream_impl_t *stream_impl)
+    cpu_stream_t(engine_t *engine, cpu::stream_impl_t *stream_impl)
         : stream_t(engine, stream_impl) {
 #if DNNL_CPU_RUNTIME == DNNL_RUNTIME_THREADPOOL
         // Initialize the verbose profiler based on threadpool capabilities.
@@ -65,7 +66,7 @@ struct cpu_stream_t : public stream_t {
 #if DNNL_CPU_RUNTIME == DNNL_RUNTIME_THREADPOOL
     cpu_stream_t(engine_t *engine,
             dnnl::threadpool_interop::threadpool_iface *threadpool)
-        : stream_t(engine, new impl::stream_impl_t(threadpool)) {
+        : stream_t(engine, new cpu::stream_impl_t(threadpool)) {
         // Initialize the verbose profiler based on threadpool capabilities.
         // init_verbose_profiler() enables verbose profiling on the
         // stream_impl_t if all required conditions are met.
@@ -131,6 +132,13 @@ struct cpu_stream_t : public stream_t {
         vp->add_to_pending_primitive_list(start_ms, pd_info, component);
 
         return status::success;
+    }
+
+    status_t get_threadpool(
+            dnnl::threadpool_interop::threadpool_iface **threadpool) const {
+        if (engine_->kind() != engine_kind::cpu)
+            return status::invalid_arguments;
+        return impl_->get_threadpool(threadpool);
     }
 
 private:
