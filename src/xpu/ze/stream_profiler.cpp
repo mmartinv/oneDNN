@@ -73,9 +73,6 @@ status_t verbose_profiler_t::get_aggregate_exec_time(
         agg_end = std::max(agg_end, end_ns);
     }
 
-    // TODO: Consolidate timing calculation calls between different
-    // profilers to avoid code duplication and ensure consistent time
-    // conversion logic
     uint64_t duration_cycles = get_duration_cycles(agg_start, agg_end);
     uint64_t duration_ns
             = static_cast<uint64_t>(timestamp_freq_ * duration_cycles);
