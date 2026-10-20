@@ -21,14 +21,18 @@
 #include "gpu/intel/include/types.h"
 
 uint4 philox_4x32_vec4_w_offset(ulong idx, ulong seed, ulong offset) {
-/* Each round needs the high and low halves of two 32x32 products. Forming
-   them as 64-bit products makes the compiler emulate a 64-bit multiply,
-   since Intel GPUs have no native one; mul_hi() and a 32-bit multiply map
-   to single instructions instead. The halves are recombined in exactly the
-   order as_uint4(...).s3210 produced them, so the result is unchanged. */
+/* Each round forms two 32x32 products and needs both halves of each.
+   Doing that as a 64-bit multiply forces the compiler to emulate it,
+   since Intel GPUs have no native 64-bit multiply; mul_hi() (high half)
+   plus a plain 32-bit multiply (low half) are one instruction each. */
 #define PHILOX_4UINT_ROUND(mul, ctr, key) \
-    (uint4)(mul_hi(ctr.s2, mul.s1) ^ ctr.s1 ^ key.s0, ctr.s2 * mul.s1, \
-            mul_hi(ctr.s0, mul.s0) ^ ctr.s3 ^ key.s1, ctr.s0 * mul.s0)
+    ({ \
+        uint lo0 = ctr.s0 * mul.s0; \
+        uint hi0 = mul_hi(ctr.s0, mul.s0); \
+        uint lo1 = ctr.s2 * mul.s1; \
+        uint hi1 = mul_hi(ctr.s2, mul.s1); \
+        (uint4)(hi1 ^ ctr.s1 ^ key.s0, lo1, hi0 ^ ctr.s3 ^ key.s1, lo0); \
+    })
 
     ulong x = (idx & ~3L);
     uint4 ctr = (uint4)((uint)offset, (uint)(offset >> 32), (uint)x,
