@@ -97,30 +97,27 @@ inline void apply_dropout_s_tile(
     const int dnbc = ugemm_kq_c_type_nblock1;
     const int dnj = dbc * dnbc;
 
-    /* The grouped path needs the group alignment to be identical in every
-       lane, otherwise the groups diverge across the subgroup and nothing is
-       saved. offset_c varies per lane, so this holds when k_stride % 4 == 0. */
-    if (use_dropout_offset && (k_stride & 3) == 0) {
+    /* The grouped path reuses one philox_4x32_vec4_w_offset() call across
+       four consecutive j. That only pays off, and is only correct, when:
+         - every lane groups the same four j together, which holds when
+           offset_c * k_stride contributes nothing mod 4, i.e. k_stride % 4
+           == 0 (offset_c itself varies per lane);
+         - the tile's own start is already on a group boundary, i.e.
+           (batch_head_base + tile_offset_r) % 4 == 0 -- tile_offset_r moves
+           with the attention k-loop so this is not always true;
+         - the tile has a whole number of groups, i.e. dnj % 4 == 0.
+       Otherwise fall back to the original one-call-per-element path for the
+       whole tile; dropout is a small fraction of total time on such tiles
+       so losing the reuse there isn't worth extra code to chase partial
+       groups. */
+    if (use_dropout_offset && (k_stride & 3) == 0 && (dnj & 3) == 0
+            && (((batch_head_base + (ulong)tile_offset_r) & 3UL) == 0)) {
         for (int i0 = 0; i0 < dbr * dnbr; i0 += dsg) {
             const int i = i0 + get_sub_group_local_id();
             const int offset_c = tile_offset_c + i;
             const ulong cbase = batch_head_base
                     + (ulong)offset_c * (ulong)k_stride + (ulong)tile_offset_r;
-
-            /* Elements before the first aligned group (uniform across lanes). */
-            int head = (int)((4UL - (cbase & 3UL)) & 3UL);
-            if (head > dnj) head = dnj;
-
-            int j = 0;
-            for (; j < head; j++) {
-                const ulong g = cbase + (ulong)j;
-                const uint ph = philox_4x32_vec4_w_offset(
-                        g, seed, offset)[(uint)(g & 3UL)];
-                tile_access(scale_tile, i0, j, dsg, dbr, dbc, dnbr)
-                        = dropout_keep(ph, tile_offset_r + j, offset_c);
-            }
-            /* cbase + j is group-aligned here, so word w serves element j + w. */
-            for (; j + 4 <= dnj; j += 4) {
+            for (int j = 0; j < dnj; j += 4) {
                 const uint4 v4 = philox_4x32_vec4_w_offset(
                         cbase + (ulong)j, seed, offset);
                 for (int w = 0; w < 4; w++) {
@@ -128,13 +125,6 @@ inline void apply_dropout_s_tile(
                             = dropout_keep(
                                     v4[w], tile_offset_r + j + w, offset_c);
                 }
-            }
-            for (; j < dnj; j++) {
-                const ulong g = cbase + (ulong)j;
-                const uint ph = philox_4x32_vec4_w_offset(
-                        g, seed, offset)[(uint)(g & 3UL)];
-                tile_access(scale_tile, i0, j, dsg, dbr, dbc, dnbr)
-                        = dropout_keep(ph, tile_offset_r + j, offset_c);
             }
         }
     } else {
