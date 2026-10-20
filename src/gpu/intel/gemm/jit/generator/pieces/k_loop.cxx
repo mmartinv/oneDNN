@@ -1161,18 +1161,24 @@ void Generator<hw>::kLoop(KLoop type, const GEMMProblem &problem, GEMMStrategy &
 
     auto doSLMRepack = [&](Iteration h) {
         if (slmDequantizeA)
-            gemmDequantizeAB(true, Ai_layout(h), state.Ao_layout, Ai_regs(h), Ao_regs(h), h, ka_load(h), ka_repack(h), kaq_load, problem, strategy, state);
+            gemmDequantizeAB(true, Ai_layout(h).int3UnpackLayout(), state.Ao_layout,
+                    Ai_regs(h), Ao_regs(h), h, ka_load(h), ka_repack(h), kaq_load,
+                    problem, strategy, state);
         else
         if (slmA && !aioShare(h) && !(slmRemActive(h) && Ai_remIncrCopy))
-            copyRegisters(Ai_layout(h), state.Ao_layout, Ai_regs(h), Ao_regs(h), strategy, state);
+            copyRegisters(Ai_layout(h).int3UnpackLayout(), state.Ao_layout,
+                    Ai_regs(h), Ao_regs(h), strategy, state);
         else if (slmConvertA(h))
             convert(Ai_regs(h), Ta_ext, Ta, strategy, state);
 
         if (slmDequantizeB)
-            gemmDequantizeAB(false, Bi_layout(h), state.Bo_layout, Bi_regs(h), Bo_regs(h), h, kb_load(h), kb_repack(h), kbq_load, problem, strategy, state);
+            gemmDequantizeAB(false, Bi_layout(h).int3UnpackLayout(),
+                    state.Bo_layout, Bi_regs(h), Bo_regs(h), h, kb_load(h),
+                    kb_repack(h), kbq_load, problem, strategy, state);
         else
         if (slmB && !bioShare(h) && !(slmRemActive(h) && Bi_remIncrCopy))
-            copyRegisters(Bi_layout(h), state.Bo_layout, Bi_regs(h), Bo_regs(h), strategy, state);
+            copyRegisters(Bi_layout(h).int3UnpackLayout(), state.Bo_layout,
+                    Bi_regs(h), Bo_regs(h), strategy, state);
         else if (slmConvertB(h))
             convert(Bi_regs(h), Tb_ext, Tb, strategy, state);
 
